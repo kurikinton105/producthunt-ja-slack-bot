@@ -1,0 +1,14 @@
+# clasp
+.clasp.json
+.clasprc.json
+
+# Node.js
+node_modules/
+package-lock.json
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store 
