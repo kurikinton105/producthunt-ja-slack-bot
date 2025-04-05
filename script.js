@@ -2,6 +2,7 @@
 const PRODUCT_HUNT_RSS_URL = 'https://www.producthunt.com/feed?category=undefined';
 const SLACK_WEBHOOK_URL = PropertiesService.getScriptProperties().getProperty('SLACK_WEBHOOK_URL');
 const OPENAI_API_KEY = PropertiesService.getScriptProperties().getProperty('OPENAI_API_KEY');
+const SPREADSHEET_ID = PropertiesService.getScriptProperties().getProperty('SPREADSHEET_ID');
 
 // メイン処理
 function main() {
@@ -30,12 +31,49 @@ function main() {
     }
     Logger.log("翻訳が完了", translatedPosts)
 
-    // Slackに投稿
-    postToSlack(translatedPosts);
-    
+    // webhookの一覧をスプレットシートから取得
+    const WEBHOOK_URLS = getWebhookUrls()
+
+    // それぞれのWebhookに対してSlackに投稿
+    WEBHOOK_URLS.forEach(webhookUrl => {
+      try {
+        // Webhook URLの形式チェック
+        if (!isValidWebhookUrl(webhookUrl)) {
+          Logger.log(`無効なWebhook URL形式です: ${webhookUrl}`);
+          return;
+        }
+        
+        Logger.log(`Webhook URLへの投稿を開始: ${webhookUrl}`);
+        postToSlack(translatedPosts, webhookUrl);
+        Logger.log(`Webhook URLへの投稿が完了: ${webhookUrl}`);
+      } catch (error) {
+        Logger.log(`Webhook URLへの投稿でエラーが発生しました (${webhookUrl}): ${error.toString()}`);
+        // エラーが発生しても次のWebhook URLの処理を続行
+      }
+    });
+  
     Logger.log('処理が正常に完了しました');
   } catch (error) {
     Logger.log('エラーが発生しました: ' + error.toString());
+  }
+}
+
+// スプレットシートからwebhookを取得
+function getWebhookUrls() {
+  try {
+    const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName('フォームの回答');
+    if (!sheet) {
+      Logger.log('Webhooksシートが見つかりません');
+      return [];
+    }
+    
+    const data = sheet.getDataRange().getValues();
+    // ヘッダー行をスキップして、Webhook URLの列を取得
+    Logger.log(data.slice(1).map(row => row[2]).filter(url => url))
+    return data.slice(1).map(row => row[2]).filter(url => url);
+  } catch (error) {
+    Logger.log('Webhook一覧の取得に失敗: ' + error.toString());
+    return [];
   }
 }
 
@@ -172,9 +210,23 @@ function translateText(text) {
   return json.choices[0].message.content;
 }
 
+// Webhook URLの形式チェック
+function isValidWebhookUrl(url) {
+  try {
+    // SlackのWebhook URLの基本形式チェック
+    const slackWebhookPattern = /^https:\/\/hooks\.slack\.com\/services\/[A-Z0-9]+\/[A-Z0-9]+\/[A-Za-z0-9]+$/;
+    return slackWebhookPattern.test(url);
+  } catch (error) {
+    Logger.log('Webhook URLの形式チェックでエラーが発生しました: ' + error.toString());
+    return false;
+  }
+}
+
 // Slackへの投稿
-function postToSlack(posts) {
+function postToSlack(posts, webhookUrl) {
   const message = {
+    username: "ProductHunt RSS",  // 投稿者の表示名
+    icon_emoji: ":sparkles:",
     blocks: [
       {
         type: 'header',
@@ -199,7 +251,7 @@ function postToSlack(posts) {
     payload: JSON.stringify(message)
   };
 
-  UrlFetchApp.fetch(SLACK_WEBHOOK_URL, options);
+  UrlFetchApp.fetch(webhookUrl, options);
 }
 
 function htmlToMarkdown(html) {
